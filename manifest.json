@@ -1,0 +1,10 @@
+{
+  "id": "auto-uploader",
+  "name": "Auto Uploader",
+  "version": "1.0.0",
+  "minAppVersion": "1.6.0",
+  "description": "Auto-upload images and videos to cloud providers (YouTube / R2 from CloudFlare) when added to your vault.",
+  "author": "Jawad Alhindi",
+  "authorUrl": "https://github.com/JawadAlhindi",
+  "isDesktopOnly": true
+}
