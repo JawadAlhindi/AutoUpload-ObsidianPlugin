@@ -148,16 +148,34 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
         } else if (this.plugin.settings.imageProvider === "r2") {
             containerEl.createEl("h4", { text: "Cloudflare R2 Storage" });
 
-            new Setting(containerEl)
+            const accountIdSetting = new Setting(containerEl)
                 .setName("Account ID")
                 .setDesc("Your Cloudflare Account ID (found in R2 dashboard)")
                 .addText(text => text
-                    .setPlaceholder("abc123def456...")
+                    .setPlaceholder("e4d5295b64a2ba0bf8cd7176968d6bea")
                     .setValue(this.plugin.settings.r2AccountId)
                     .onChange(async (value) => {
                         this.plugin.settings.r2AccountId = value;
                         await this.plugin.saveSettings();
+                        updateEndpointPreview();
                     }));
+
+            // Show endpoint preview
+            const endpointPreview = containerEl.createEl("div", {
+                cls: "r2-endpoint-preview",
+                attr: { style: "margin-top: -10px; margin-bottom: 10px; padding: 8px; background: var(--background-secondary); border-radius: 4px; font-size: 0.9em; color: var(--text-muted);" }
+            });
+            
+            const updateEndpointPreview = () => {
+                if (this.plugin.settings.r2AccountId) {
+                    endpointPreview.textContent = `Endpoint: https://${this.plugin.settings.r2AccountId}.r2.cloudflarestorage.com`;
+                    endpointPreview.style.color = "var(--text-normal)";
+                } else {
+                    endpointPreview.textContent = "Endpoint will be auto-generated from Account ID";
+                    endpointPreview.style.color = "var(--text-muted)";
+                }
+            };
+            updateEndpointPreview();
 
             new Setting(containerEl)
                 .setName("Bucket Name")
@@ -213,6 +231,18 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
                         this.plugin.settings.r2PublicUrl = value;
                         await this.plugin.saveSettings();
                     }));
+
+            // Help text
+            const helpText = containerEl.createEl("div", {
+                attr: { style: "margin-top: 20px; padding: 12px; background: var(--background-secondary-alt); border-radius: 4px; font-size: 0.85em; color: var(--text-muted);" }
+            });
+            helpText.innerHTML = `
+                <strong>💡 Quick Setup:</strong><br>
+                • Account ID: Found in Cloudflare R2 dashboard<br>
+                • Bucket: Create one in R2 dashboard if needed<br>
+                • API Keys: Create in R2 → Manage R2 API Tokens<br>
+                • Public URL: Optional - for custom domains or R2.dev subdomain
+            `;
         } else {
             containerEl.createEl("h4", { text: "S3 Compatible Storage (R2, AWS, Hetzner)" });
 

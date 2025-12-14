@@ -12,14 +12,21 @@ export default class AutoUploaderPlugin extends Plugin {
 
         this.registerEvent(
             this.app.vault.on("create", async (file: TFile) => {
-                console.log("File created:", file.path);
+                // Normalize paths for comparison
+                const watchFolder = this.settings.watchFolder.endsWith("/") 
+                    ? this.settings.watchFolder 
+                    : this.settings.watchFolder + "/";
+                const filePath = file.path;
                 
-                if (!file.path.startsWith(this.settings.watchFolder)) {
-                    console.log("File not in watch folder. Expected:", this.settings.watchFolder, "Got:", file.path);
+                console.log("File created:", filePath);
+                console.log("Watch folder:", watchFolder);
+                
+                if (!filePath.startsWith(watchFolder)) {
+                    console.log("File not in watch folder. Skipping:", filePath);
                     return;
                 }
 
-                console.log("File is in watch folder! Processing...");
+                console.log("File is in watch folder! Processing:", filePath);
                 new Notice("Detected file in auto-upload folder: " + file.name);
 
                 const ext = file.extension.toLowerCase();
