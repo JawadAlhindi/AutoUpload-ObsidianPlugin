@@ -11,6 +11,9 @@
   "keywords": ["obsidian", "plugin", "uploader"],
   "author": "Your Name",
   "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.490.0"
+  },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
