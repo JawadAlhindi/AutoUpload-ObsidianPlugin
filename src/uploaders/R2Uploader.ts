@@ -16,34 +16,62 @@ export class R2Uploader implements ImageUploader {
             throw new Error("R2 credentials are incomplete. Please check your settings.");
         }
 
-        // R2 endpoint format: https://<account-id>.r2.cloudflarestorage.com
-        const endpoint = `https://${settings.r2AccountId}.r2.cloudflarestorage.com`;
-        const bucket = settings.r2Bucket;
-        const key = file.name; // Original filename (may contain spaces)
-        
-        // Read file data
-        const arrayBuffer = await this.plugin.app.vault.readBinary(file);
-        const contentType = this.getContentType(file.extension);
-        
-        // For signing, canonical URI must use the same encoded path as the actual request.
-        // If we sign "/bucket/800x800 3.jpg" but request "/bucket/800x800%203.jpg",
-        // the signature will be invalid and R2 returns 403.
-        const encodedKey = encodeURIComponent(key).replace(/%2F/g, "/");
-        const canonicalPath = `/${bucket}/${encodedKey}`;
-        const urlPath = canonicalPath;
-        const url = `${endpoint}${urlPath}`;
-        
-        const headers = await this.generateSignedHeaders(
-            "PUT",
-            endpoint,
-            canonicalPath,
-            settings.r2AccessKeyId,
-            settings.r2SecretAccessKey,
-            contentType,
-            arrayBuffer
-        );
-
         try {
+            // R2 endpoint format: https://<account-id>.r2.cloudflarestorage.com
+            const endpoint = `https://${settings.r2AccountId}.r2.cloudflarestorage.com`;
+            const bucket = settings.r2Bucket;
+            const key = file.name; // Original filename (may contain spaces)
+
+            // For signing, canonical URI must use the same encoded path as the actual request.
+            const encodedKey = encodeURIComponent(key).replace(/%2F/g, "/");
+            const canonicalPath = `/${bucket}/${encodedKey}`;
+            const urlPath = canonicalPath;
+            const url = `${endpoint}${urlPath}`;
+
+            // 1) First, check if the object already exists in R2 by name.
+            //    This avoids re-uploading the same media and consuming quota.
+            try {
+                const headHeaders = await this.generateSignedHeaders(
+                    "HEAD",
+                    endpoint,
+                    canonicalPath,
+                    settings.r2AccessKeyId,
+                    settings.r2SecretAccessKey,
+                    "",
+                    new ArrayBuffer(0)
+                );
+
+                const headResponse = await requestUrl({
+                    url,
+                    method: "HEAD",
+                    headers: headHeaders
+                });
+
+                console.log("R2 HEAD - status:", headResponse.status);
+
+                if (headResponse.status === 200 || headResponse.status === 204) {
+                    // Object with this filename already exists. Just return its URL.
+                    return this.buildPublicUrl(key);
+                }
+            } catch (headError) {
+                console.log("R2 HEAD check failed (will attempt upload):", headError);
+                // If HEAD fails (404 / 403 / network), we fall back to upload.
+            }
+
+            // 2) Object does not exist (or HEAD not reliable) – perform the upload.
+            const arrayBuffer = await this.plugin.app.vault.readBinary(file);
+            const contentType = this.getContentType(file.extension);
+
+            const headers = await this.generateSignedHeaders(
+                "PUT",
+                endpoint,
+                canonicalPath,
+                settings.r2AccessKeyId,
+                settings.r2SecretAccessKey,
+                contentType,
+                arrayBuffer
+            );
+
             console.log("R2 Upload - URL:", url);
             console.log("R2 Upload - Headers:", Object.keys(headers));
             console.log("R2 Upload - Body size:", arrayBuffer.byteLength);
@@ -64,18 +92,8 @@ export class R2Uploader implements ImageUploader {
                 throw new Error(`Upload failed with status ${response.status}: ${response.text || "Unknown error"}`);
             }
             
-            // Construct the public URL (use original filename, not encoded)
-            const originalKey = file.name;
-            if (settings.r2PublicDomain) {
-                const domain = settings.r2PublicDomain.replace(/\/$/, "");
-                return `${domain}/${encodeURIComponent(originalKey)}`;
-            } else if (settings.r2PublicUrl) {
-                const publicUrl = settings.r2PublicUrl.replace(/\/$/, "");
-                return `${publicUrl}/${encodeURIComponent(originalKey)}`;
-            } else {
-                // Default R2 public URL format
-                return `https://${bucket}.${settings.r2AccountId}.r2.cloudflarestorage.com/${encodeURIComponent(originalKey)}`;
-            }
+            // Construct the public URL (use original filename, not encoded in the key)
+            return this.buildPublicUrl(key);
 
         } catch (error: any) {
             console.error("R2 Upload Error:", error);
@@ -204,5 +222,22 @@ export class R2Uploader implements ImageUploader {
             "svg": "image/svg+xml",
         };
         return map[extension.toLowerCase()] || "application/octet-stream";
+    }
+
+    private buildPublicUrl(originalKey: string): string {
+        const settings = this.plugin.settings;
+        const encoded = encodeURIComponent(originalKey);
+
+        if (settings.r2PublicDomain) {
+            const domain = settings.r2PublicDomain.replace(/\/$/, "");
+            return `${domain}/${encoded}`;
+        } else if (settings.r2PublicUrl) {
+            const publicUrl = settings.r2PublicUrl.replace(/\/$/, "");
+            return `${publicUrl}/${encoded}`;
+        } else {
+            // Default R2 public URL format
+            const bucket = settings.r2Bucket;
+            return `https://${bucket}.${settings.r2AccountId}.r2.cloudflarestorage.com/${encoded}`;
+        }
     }
 }
