@@ -19,16 +19,18 @@ export class R2Uploader implements ImageUploader {
         // R2 endpoint format: https://<account-id>.r2.cloudflarestorage.com
         const endpoint = `https://${settings.r2AccountId}.r2.cloudflarestorage.com`;
         const bucket = settings.r2Bucket;
-        const key = file.name; // Use original filename for canonical request
+        const key = file.name; // Original filename (may contain spaces)
         
         // Read file data
         const arrayBuffer = await this.plugin.app.vault.readBinary(file);
         const contentType = this.getContentType(file.extension);
         
-        // For path-style access, the canonical path is /bucket/key (unencoded)
-        // But the URL needs proper encoding
-        const canonicalPath = `/${bucket}/${key}`;
-        const urlPath = `/${bucket}/${encodeURIComponent(key).replace(/%2F/g, "/")}`;
+        // For signing, canonical URI must use the same encoded path as the actual request.
+        // If we sign "/bucket/800x800 3.jpg" but request "/bucket/800x800%203.jpg",
+        // the signature will be invalid and R2 returns 403.
+        const encodedKey = encodeURIComponent(key).replace(/%2F/g, "/");
+        const canonicalPath = `/${bucket}/${encodedKey}`;
+        const urlPath = canonicalPath;
         const url = `${endpoint}${urlPath}`;
         
         const headers = await this.generateSignedHeaders(
