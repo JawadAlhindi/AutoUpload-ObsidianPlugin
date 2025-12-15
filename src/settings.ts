@@ -21,6 +21,8 @@ export interface AutoUploaderSettings {
     r2PublicDomain: string;
     r2PublicUrl: string;
     imageProvider: "imgur" | "s3" | "r2";
+    // Cache of uploaded files to avoid double uploads (file path -> URL)
+    uploadCache: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: AutoUploaderSettings = {
@@ -41,7 +43,8 @@ export const DEFAULT_SETTINGS: AutoUploaderSettings = {
     r2Bucket: "",
     r2PublicDomain: "",
     r2PublicUrl: "",
-    imageProvider: "imgur"
+    imageProvider: "imgur",
+    uploadCache: {}
 };
 
 export class AutoUploaderSettingTab extends PluginSettingTab {
@@ -322,5 +325,17 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
         }
+
+        // Maintenance / tools
+        new Setting(containerEl)
+            .setName("Clear upload cache")
+            .setDesc("Forget which files were already uploaded (use this if you changed or re-used filenames).")
+            .addButton(button => button
+                .setButtonText("Clear")
+                .onClick(async () => {
+                    this.plugin.settings.uploadCache = {};
+                    await this.plugin.saveSettings();
+                    new Notice("Upload cache cleared.");
+                }));
     }
 }

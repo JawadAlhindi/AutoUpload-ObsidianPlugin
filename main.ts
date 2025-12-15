@@ -217,11 +217,31 @@ export default class AutoUploaderPlugin extends Plugin {
     private async uploadFileByType(file: TFile): Promise<string | null> {
         const ext = file.extension.toLowerCase();
 
+        // Use filename-based cache so the same media name
+        // (e.g., "Pasted image ....png" or "800x800 3.jpg")
+        // is only uploaded once, even if moved to another folder
+        const cacheKey = file.name.toLowerCase();
+
+        // Check cache first to avoid double uploads or double API calls
+        if (this.settings.uploadCache && this.settings.uploadCache[cacheKey]) {
+            return this.settings.uploadCache[cacheKey];
+        }
+
         try {
             if (["png", "jpg", "jpeg", "gif", "webp", "heic"].includes(ext)) {
-                return await uploadImage(this, file);
+                const url = await uploadImage(this, file);
+                if (url) {
+                    this.settings.uploadCache[cacheKey] = url;
+                    await this.saveSettings();
+                }
+                return url;
             } else if (["mp4", "mov", "m4v"].includes(ext)) {
-                return await uploadVideo(this, file);
+                const url = await uploadVideo(this, file);
+                if (url) {
+                    this.settings.uploadCache[cacheKey] = url;
+                    await this.saveSettings();
+                }
+                return url;
             } else {
                 return null;
             }
