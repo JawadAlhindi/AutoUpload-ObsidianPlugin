@@ -1,11 +1,12 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
+import { S3Uploader } from "./uploaders/S3Uploader";
+import { R2Uploader } from "./uploaders/R2Uploader";
 
 export interface AutoUploaderSettings {
     watchFolder: string;
     youtubeToken: string;
     youtubeRefreshToken: string;
-    imgurClientId: string;
-    // S3 Settings
+    // S3 Settings (universal S3-compatible providers: AWS, Supabase, Hetzner, etc.)
     s3Endpoint: string;
     s3Region: string;
     s3AccessKey: string;
@@ -20,8 +21,9 @@ export interface AutoUploaderSettings {
     r2Bucket: string;
     r2PublicDomain: string;
     r2PublicUrl: string;
-    imageProvider: "imgur" | "s3" | "r2";
-    // Cache of uploaded files to avoid double uploads (file path -> URL)
+    // Image provider selection
+    imageProvider: "s3" | "r2";
+    // Cache of uploaded files to avoid double uploads (file name -> URL)
     uploadCache: Record<string, string>;
 }
 
@@ -29,7 +31,6 @@ export const DEFAULT_SETTINGS: AutoUploaderSettings = {
     watchFolder: "auto-upload/",
     youtubeToken: "",
     youtubeRefreshToken: "",
-    imgurClientId: "",
     s3Endpoint: "",
     s3Region: "auto",
     s3AccessKey: "",
@@ -43,7 +44,7 @@ export const DEFAULT_SETTINGS: AutoUploaderSettings = {
     r2Bucket: "",
     r2PublicDomain: "",
     r2PublicUrl: "",
-    imageProvider: "imgur",
+    imageProvider: "r2",
     uploadCache: {}
 };
 
@@ -127,28 +128,16 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
             .setName("Image Provider")
             .setDesc("Choose where to upload images")
             .addDropdown(dropdown => dropdown
-                .addOption("imgur", "Imgur")
-                .addOption("s3", "S3 / Hetzner")
+                .addOption("s3", "S3 / Hetzner / Supabase / Generic S3")
                 .addOption("r2", "Cloudflare R2")
                 .setValue(this.plugin.settings.imageProvider)
-                .onChange(async (value: "imgur" | "s3" | "r2") => {
+                .onChange(async (value: "s3" | "r2") => {
                     this.plugin.settings.imageProvider = value;
                     await this.plugin.saveSettings();
                     this.display(); // Refresh to show/hide relevant settings
                 }));
 
-        if (this.plugin.settings.imageProvider === "imgur") {
-            new Setting(containerEl)
-                .setName("Imgur Client ID")
-                .setDesc("Imgur client ID for image uploads")
-                .addText(text => text
-                    .setPlaceholder("Enter your Imgur client ID")
-                    .setValue(this.plugin.settings.imgurClientId)
-                    .onChange(async (value) => {
-                        this.plugin.settings.imgurClientId = value;
-                        await this.plugin.saveSettings();
-                    }));
-        } else if (this.plugin.settings.imageProvider === "r2") {
+        if (this.plugin.settings.imageProvider === "r2") {
             containerEl.createEl("h4", { text: "Cloudflare R2 Storage" });
 
             const accountIdSetting = new Setting(containerEl)
@@ -233,6 +222,24 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.r2PublicUrl = value;
                         await this.plugin.saveSettings();
+                    }));
+
+            // R2 connection test
+            new Setting(containerEl)
+                .setName("Test R2 Connection")
+                .setDesc("Verify that your R2 credentials and bucket are correct.")
+                .addButton(button => button
+                    .setButtonText("Check")
+                    .onClick(async () => {
+                        new Notice("Checking R2 connection...");
+                        try {
+                            const uploader = new R2Uploader(this.plugin);
+                            await uploader.testConnection();
+                            new Notice("R2 connection OK.");
+                        } catch (err: any) {
+                            console.error("R2 connection test error:", err);
+                            new Notice("R2 connection failed: " + (err.message ?? err));
+                        }
                     }));
 
             // Help text
@@ -323,6 +330,24 @@ export class AutoUploaderSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.s3ForcePathStyle = value;
                         await this.plugin.saveSettings();
+                    }));
+
+            // S3 connection test
+            new Setting(containerEl)
+                .setName("Test S3 Connection")
+                .setDesc("Verify that your S3-compatible credentials and bucket are correct.")
+                .addButton(button => button
+                    .setButtonText("Check")
+                    .onClick(async () => {
+                        new Notice("Checking S3 connection...");
+                        try {
+                            const uploader = new S3Uploader(this.plugin);
+                            await uploader.testConnection();
+                            new Notice("S3 connection OK.");
+                        } catch (err: any) {
+                            console.error("S3 connection test error:", err);
+                            new Notice("S3 connection failed: " + (err.message ?? err));
+                        }
                     }));
         }
 

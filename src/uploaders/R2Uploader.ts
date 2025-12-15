@@ -9,6 +9,47 @@ export class R2Uploader implements ImageUploader {
         this.plugin = plugin;
     }
 
+    async testConnection(): Promise<void> {
+        const settings = this.plugin.settings;
+
+        if (!settings.r2AccessKeyId || !settings.r2SecretAccessKey || !settings.r2Bucket || !settings.r2AccountId) {
+            throw new Error("R2 settings are incomplete. Please fill Account ID, Bucket, Access Key and Secret Key.");
+        }
+
+        const endpoint = `https://${settings.r2AccountId}.r2.cloudflarestorage.com`;
+        const bucket = settings.r2Bucket;
+        const key = "__connection-test__";
+        const encodedKey = encodeURIComponent(key).replace(/%2F/g, "/");
+        const canonicalPath = `/${bucket}/${encodedKey}`;
+        const url = `${endpoint}${canonicalPath}`;
+
+        try {
+            const headers = await this.generateSignedHeaders(
+                "HEAD",
+                endpoint,
+                canonicalPath,
+                settings.r2AccessKeyId,
+                settings.r2SecretAccessKey,
+                "",
+                new ArrayBuffer(0)
+            );
+
+            const response = await requestUrl({
+                url,
+                method: "HEAD",
+                headers
+            });
+
+            // 200/204 = object exists; 404 = object not found but bucket accessible => treat all as "OK"
+            if (![200, 204, 404].includes(response.status)) {
+                throw new Error(`Unexpected status ${response.status}`);
+            }
+        } catch (error: any) {
+            console.error("R2 connection test failed:", error);
+            throw new Error(`R2 connection failed: ${error.message ?? error}`);
+        }
+    }
+
     async upload(file: TFile): Promise<string> {
         const settings = this.plugin.settings;
         
