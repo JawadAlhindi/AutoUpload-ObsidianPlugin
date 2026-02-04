@@ -20,44 +20,10 @@ export default class AutoUploaderPlugin extends Plugin {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
         this.addSettingTab(new AutoUploaderSettingTab(this.app, this));
 
-        // Auto-upload ONLY for files created inside the watch folder
-        this.registerEvent(
-            this.app.vault.on("create", async (file: TFile) => {
-                const watchFolder = this.settings.watchFolder.endsWith("/")
-                    ? this.settings.watchFolder
-                    : this.settings.watchFolder + "/";
-                const filePath = file.path;
-
-                console.log("File created:", filePath);
-                console.log("Watch folder:", watchFolder);
-
-                if (!filePath.startsWith(watchFolder)) {
-                    console.log("File not in watch folder. Skipping:", filePath);
-                    return;
-                }
-
-                console.log("File is in watch folder! Processing:", filePath);
-                new Notice("Detected file in auto-upload folder: " + file.name);
-
-                const ext = file.extension.toLowerCase();
-                console.log("File extension:", ext);
-
-                try {
-                    if (["png", "jpg", "jpeg", "gif", "webp", "heic"].includes(ext)) {
-                        new Notice("Uploading image: " + file.name);
-                        const url = await uploadImage(this, file);
-                        this.insertLink(file, url);
-                    } else if (["mp4", "mov", "m4v"].includes(ext)) {
-                        new Notice("Uploading video to YouTube: " + file.name);
-                        const url = await uploadVideo(this, file);
-                        this.insertLink(file, url);
-                    }
-                } catch (err) {
-                    console.error("Upload error:", err);
-                    new Notice("Upload failed: " + err);
-                }
-            })
-        );
+        // Ribbon button for manual upload from watch folder
+        this.addRibbonIcon("upload-cloud", "Upload media from watch folder", async () => {
+            await this.uploadFromWatchFolder();
+        });
 
         // Command to upload all images/videos in the current note
         this.addCommand({
@@ -88,6 +54,75 @@ export default class AutoUploaderPlugin extends Plugin {
         if (!editor) return;
         editor.replaceSelection(url);
         new Notice("Uploaded: " + file.name);
+    }
+
+    // Manual upload from watch folder (triggered by ribbon button)
+    private async uploadFromWatchFolder() {
+        const watchFolder = this.settings.watchFolder.endsWith("/")
+            ? this.settings.watchFolder.slice(0, -1)
+            : this.settings.watchFolder;
+
+        if (!watchFolder) {
+            new Notice("No watch folder configured. Set it in plugin settings.");
+            return;
+        }
+
+        const folder = this.app.vault.getAbstractFileByPath(watchFolder);
+        if (!folder) {
+            new Notice("Watch folder does not exist: " + watchFolder);
+            return;
+        }
+
+        const allFiles = this.app.vault.getFiles();
+        const mediaFiles = allFiles.filter(file => {
+            if (!file.path.startsWith(watchFolder + "/")) return false;
+            const ext = file.extension.toLowerCase();
+            return ["png", "jpg", "jpeg", "gif", "webp", "heic", "mp4", "mov", "m4v"].includes(ext);
+        });
+
+        if (mediaFiles.length === 0) {
+            new Notice("No media files found in watch folder.");
+            return;
+        }
+
+        let uploaded = 0;
+        let skipped = 0;
+
+        for (const file of mediaFiles) {
+            const cacheKey = file.name.toLowerCase();
+
+            // Skip if already uploaded
+            if (this.settings.uploadCache && this.settings.uploadCache[cacheKey]) {
+                skipped++;
+                continue;
+            }
+
+            const ext = file.extension.toLowerCase();
+            try {
+                if (["png", "jpg", "jpeg", "gif", "webp", "heic"].includes(ext)) {
+                    new Notice("Uploading image: " + file.name);
+                    const url = await uploadImage(this, file);
+                    if (url) {
+                        this.settings.uploadCache[cacheKey] = url;
+                        await this.saveSettings();
+                        uploaded++;
+                    }
+                } else if (["mp4", "mov", "m4v"].includes(ext)) {
+                    new Notice("Uploading video: " + file.name);
+                    const url = await uploadVideo(this, file);
+                    if (url) {
+                        this.settings.uploadCache[cacheKey] = url;
+                        await this.saveSettings();
+                        uploaded++;
+                    }
+                }
+            } catch (err) {
+                console.error("Upload error for " + file.name + ":", err);
+                new Notice("Upload failed: " + file.name);
+            }
+        }
+
+        new Notice(`Upload complete: ${uploaded} uploaded, ${skipped} already cached.`);
     }
 
     private async uploadMediaInCurrentNote(editor: Editor) {
