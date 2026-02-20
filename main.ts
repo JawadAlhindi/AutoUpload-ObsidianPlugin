@@ -88,6 +88,8 @@ export default class AutoUploaderPlugin extends Plugin {
         let uploaded = 0;
         let skipped = 0;
 
+        let cacheUpdated = false;
+
         for (const file of mediaFiles) {
             const cacheKey = file.name.toLowerCase();
 
@@ -104,7 +106,7 @@ export default class AutoUploaderPlugin extends Plugin {
                     const url = await uploadImage(this, file);
                     if (url) {
                         this.settings.uploadCache[cacheKey] = url;
-                        await this.saveSettings();
+                        cacheUpdated = true;
                         uploaded++;
                     }
                 } else if (["mp4", "mov", "m4v"].includes(ext)) {
@@ -112,7 +114,7 @@ export default class AutoUploaderPlugin extends Plugin {
                     const url = await uploadVideo(this, file);
                     if (url) {
                         this.settings.uploadCache[cacheKey] = url;
-                        await this.saveSettings();
+                        cacheUpdated = true;
                         uploaded++;
                     }
                 }
@@ -120,6 +122,11 @@ export default class AutoUploaderPlugin extends Plugin {
                 console.error("Upload error for " + file.name + ":", err);
                 new Notice("Upload failed: " + file.name);
             }
+        }
+
+        // Persist cache once after all uploads instead of after each file.
+        if (cacheUpdated) {
+            await this.saveSettings();
         }
 
         new Notice(`Upload complete: ${uploaded} uploaded, ${skipped} already cached.`);
@@ -220,6 +227,8 @@ export default class AutoUploaderPlugin extends Plugin {
         }
 
         if (changed) {
+            // Persist cache once after all uploads for this note.
+            await this.saveSettings();
             editor.setValue(content);
             new Notice("Uploaded media and updated note links.");
         } else {
@@ -263,23 +272,20 @@ export default class AutoUploaderPlugin extends Plugin {
         }
 
         try {
+            let url: string | null = null;
             if (["png", "jpg", "jpeg", "gif", "webp", "heic"].includes(ext)) {
-                const url = await uploadImage(this, file);
-                if (url) {
-                    this.settings.uploadCache[cacheKey] = url;
-                    await this.saveSettings();
-                }
-                return url;
+                url = await uploadImage(this, file);
             } else if (["mp4", "mov", "m4v"].includes(ext)) {
-                const url = await uploadVideo(this, file);
-                if (url) {
-                    this.settings.uploadCache[cacheKey] = url;
-                    await this.saveSettings();
-                }
-                return url;
+                url = await uploadVideo(this, file);
             } else {
                 return null;
             }
+
+            if (url) {
+                this.settings.uploadCache[cacheKey] = url;
+                // Caller is responsible for calling saveSettings() after the batch.
+            }
+            return url;
         } catch (error) {
             console.error("Upload failed for file:", file.path, error);
             new Notice("Upload failed for " + file.name);
